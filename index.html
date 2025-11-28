@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Constellation Projection</title>
+<style>
+body {
+    margin: 0;
+    overflow: hidden;
+    background-color: #00000a;
+    font-family: 'Inter', sans-serif;
+}
+canvas, video {
+    display: block;
+    width: 100vw;
+    height: 100vh;
+    object-fit: cover;
+}
+#loopVideo {
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 1;
+}
+#projectionCanvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 2;
+}
+</style>
+</head>
+<body>
+
+<!-- Looping background video -->
+<video id="loopVideo" autoplay muted loop>
+    <source src="/client/loop-video.mp4" type="video/mp4">
+</video>
+
+<!-- Constellation Canvas -->
+<canvas id="projectionCanvas" style="display: none;"></canvas>
+
+<script>
+const canvas = document.getElementById('projectionCanvas');
+const ctx = canvas.getContext('2d');
+const video = document.getElementById('loopVideo');
+
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+let showingCanvas = false;
+let canvasTimer = null;
+
+// Constellation storage
+let constellations = [];
+const inProgressConstellations = new Map();
+
+// Background stars
+let backgroundStars = [];
+const NUM_STARS = 400;
+const STAR_COLOR = 'rgba(120, 200, 255, 1.0)';
+const STAR_SIZE_MAX = 5;
+
+/* -------------------------------------------------------
+    BACKGROUND SKY INITIALIZATION
+--------------------------------------------------------*/
+function initSky() {
+    backgroundStars = [];
+    for (let i = 0; i < NUM_STARS; i++) {
+        backgroundStars.push({
+            x: Math.random() * canvas.width,
+            y: Math.random() * canvas.height,
+            size: Math.random() * 2 + 0.5,
+            opacity: Math.random() * 0.5 + 0.2,
+            twinkleSpeed: Math.random() * 0.05 + 0.01,
+            driftX: (Math.random() - 0.5) * 0.05,
+            driftY: (Math.random() - 0.5) * 0.05,
+            angleOffset: i * 0.1
+        });
+    }
+}
+
+/* -------------------------------------------------------
+    RENDER SKY + CONSTELLATIONS
+--------------------------------------------------------*/
+function drawSky() {
+    ctx.fillStyle = '#00000a';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    const now = Date.now() * 0.00005;
+
+    // Nebula effect
+    const swirl1Gradient = ctx.createRadialGradient(
+        canvas.width * (0.4 + Math.sin(now) * 0.1),
+        canvas.height * (0.45 + Math.cos(now * 0.5) * 0.1),
+        50,
+        canvas.width * 0.5, canvas.height * 0.5,
+        Math.min(canvas.width, canvas.height) * 0.7
+    );
+    swirl1Gradient.addColorStop(0, 'rgba(0, 150, 255, 0.15)');
+    swirl1Gradient.addColorStop(0.3, 'rgba(0, 50, 150, 0.1)');
+    swirl1Gradient.addColorStop(1, 'rgba(0, 0, 10, 0)');
+    ctx.fillStyle = swirl1Gradient;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Second nebula layer
+    const swirl2Gradient = ctx.createRadialGradient(
+        canvas.width * (0.7 + Math.cos(now * 0.7) * 0.15),
+        canvas.height * (0.3 + Math.sin(now * 0.9) * 0.15),
+        50,
+        canvas.width * 0.6, canvas.height * 0.4,
+        Math.min(canvas.width, canvas.height) * 0.7
+    );
+    swirl2Gradient.addColorStop(0, 'rgba(150, 50, 255, 0.1)');
+    swirl2Gradient.addColorStop(0.3, 'rgba(100, 0, 150, 0.05)');
+    swirl2Gradient.addColorStop(1, 'rgba(0, 0, 10, 0)');
+    ctx.fillStyle = swirl2Gradient;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Stars
+    backgroundStars.forEach(star => {
+        star.x += star.driftX;
+        star.y += star.driftY;
+
+        if (star.x < 0) star.x = canvas.width;
+        if (star.x > canvas.width) star.x = 0;
+        if (star.y < 0) star.y = canvas.height;
+        if (star.y > canvas.height) star.y = 0;
+
+        const twinkle = Math.sin(Date.now() * star.twinkleSpeed + star.angleOffset) * 0.2 + 0.8;
+        const starOpacity = star.opacity * twinkle;
+
+        ctx.beginPath();
+        ctx.arc(star.x, star.y, star.size, 0, Math.PI * 2);
+        ctx.shadowBlur = star.size > 1.5 ? star.size * 2 : 0;
+        ctx.shadowColor = `rgba(255,255,255,${starOpacity})`;
+        ctx.fillStyle = `rgba(255,255,255,${starOpacity})`;
+        ctx.fill();
+    });
+
+    ctx.shadowBlur = 0;
+}
+
+function drawConstellations() {
+    constellations.forEach(c => renderConstellation(c.nodes, c.opacity ?? 1));
+    inProgressConstellations.forEach(nodes => renderConstellation(nodes, 0.7));
+}
+
+function renderConstellation(nodes, opacity = 1) {
+    if (!nodes || nodes.length < 2) return;
+
+    const flicker = 0.9 + Math.sin(Date.now() / 150 + nodes[0].x) * 0.1;
+    const finalOpacity = opacity * flicker;
+
+    // Lines
+    for (let i = 0; i < nodes.length - 1; i++) {
+        ctx.beginPath();
+        ctx.moveTo(nodes[i].x, nodes[i].y);
+        ctx.lineTo(nodes[i + 1].x, nodes[i + 1].y);
+        ctx.strokeStyle = `rgba(173,216,230,${finalOpacity * 0.8})`;
+        ctx.lineWidth = 3;
+        ctx.shadowColor = STAR_COLOR;
+        ctx.shadowBlur = 12 * flicker;
+        ctx.stroke();
+    }
+
+    // Nodes
+    nodes.forEach(node => {
+        ctx.beginPath();
+        const size = (STAR_SIZE_MAX + Math.sin(Date.now() / 500 + node.x) * 1.5) * flicker;
+        ctx.arc(node.x, node.y, size, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(255,255,255,${finalOpacity})`;
+        ctx.shadowColor = STAR_COLOR;
+        ctx.shadowBlur = 15 * flicker;
+        ctx.fill();
+    });
+
+    ctx.shadowBlur = 0;
+}
+
+/* -------------------------------------------------------
+    ANIMATE LOOP
+--------------------------------------------------------*/
+function animate() {
+    drawSky();
+    drawConstellations();
+    requestAnimationFrame(animate);
+}
+
+/* -------------------------------------------------------
+    WEBSOCKET HANDLING
+--------------------------------------------------------*/
+const host = window.location.hostname || 'localhost';
+let socket;
+
+function connectWebSocket() {
+    socket = new WebSocket(`ws://${host}:8080`);
+
+    socket.addEventListener('open', () => console.log('Projection connected'));
+    socket.addEventListener('message', handleMessage);
+
+    socket.addEventListener('close', () => {
+        console.warn("Disconnected, retrying...");
+        setTimeout(connectWebSocket, 2000);
+    });
+}
+connectWebSocket();
+
+async function handleMessage(e) {
+    let text = e.data instanceof Blob ? await e.data.text() : e.data;
+
+    let data;
+    try {
+        data = JSON.parse(text);
+    } catch {
+        return;
+    }
+
+    if (!data.type) return;
+
+    switch (data.type) {
+
+        // DO NOT trigger projection mode for history
+        case 'history':
+            constellations = Array.isArray(data.paths)
+                ? data.paths.map(path => ({ nodes: path }))
+                : [];
+            inProgressConstellations.clear();
+            break;
+
+        case 'draw':
+            if (!data.point || data.clientId == null) break;
+            pushNode(data.clientId, data.point);
+            showCanvas();
+            break;
+
+        case 'endPath':
+            finalizeConstellation(data.clientId, data.path);
+            showCanvas();
+            break;
+
+        case 'clear':
+            constellations = [];
+            inProgressConstellations.clear();
+            showCanvas();
+            break;
+    }
+}
+
+function pushNode(clientId, point) {
+    const nodes = inProgressConstellations.get(clientId) || [];
+    nodes.push(point);
+    inProgressConstellations.set(clientId, nodes);
+}
+
+function finalizeConstellation(clientId, suppliedPath) {
+    let nodes = Array.isArray(suppliedPath) ? suppliedPath : inProgressConstellations.get(clientId);
+
+    if (nodes && nodes.length) {
+        constellations.push({ nodes });
+        if (constellations.length > 1000) {
+            constellations = constellations.slice(-1000);
+        }
+    }
+    inProgressConstellations.delete(clientId);
+}
+
+/* -------------------------------------------------------
+    SHOW CANVAS LOGIC (9 SECOND RULE)
+--------------------------------------------------------*/
+function showCanvas() {
+
+    if (!showingCanvas) {
+        video.pause();
+        video.style.display = 'none';
+
+        canvas.style.display = 'block';
+        showingCanvas = true;
+    }
+
+    // Reset timer
+    clearTimeout(canvasTimer);
+    canvasTimer = setTimeout(() => {
+        canvas.style.display = 'none';
+        video.style.display = 'block';
+
+        showingCanvas = false;
+
+        video.currentTime = 0;
+        video.play();
+    }, 9000);
+}
+
+/* -------------------------------------------------------
+    INIT
+--------------------------------------------------------*/
+function init() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    initSky();
+    animate();
+}
+init();
+
+window.addEventListener('resize', () => {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    initSky();
+});
+</script>
+
+</body>
+</html>
